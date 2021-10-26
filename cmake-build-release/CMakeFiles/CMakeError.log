@@ -1,0 +1,10 @@
+Compiling the CUDA compiler identification source file "CMakeCUDACompilerId.cu" failed.
+Compiler: C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.4/bin/nvcc.exe 
+Build flags: -D_WINDOWS;-Xcompiler=";/GR;/EHsc"
+Id flags: --keep;--keep-dir;tmp;-gencode=arch=compute_52,code=sm_52 -v
+
+The output was:
+1
+nvcc fatal   : Stray '"' character
+
+

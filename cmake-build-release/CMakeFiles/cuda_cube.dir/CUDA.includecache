@@ -1,0 +1,26 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+E:/Documents/CLionProjects/cuda-cube/consts.cuh
+vector
+-
+string
+-
+
+E:/Documents/CLionProjects/cuda-cube/main.cu
+iostream
+-
+chrono
+-
+fstream
+-
+algorithm
+-
+consts.cuh
+E:/Documents/CLionProjects/cuda-cube/consts.cuh
+
