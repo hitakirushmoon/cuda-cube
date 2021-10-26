@@ -746,11 +746,13 @@ __global__ void iterative_solve(const int limit, const int bound) {
 
 struct unaryfn : std::unary_function<int, int> {
     __device__ __host__ int operator()(int i) const { return sizeof(ida_stack) * i; }
-
 };
 
 void solve_cube(full_cube &f) {
     search_state state(f);
+    if (state.i.edge_perm / 2 + state.i.full_corner + state.i.edge_or == 0){
+        return;
+    }
     cout << state << endl;
     int bound = state.h();
     int size;
