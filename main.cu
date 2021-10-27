@@ -313,8 +313,6 @@ public:
 };
 
 
-__device__ uint64_t *device_edge_perm_pattern_database;
-__device__ uint64_t *device_full_corner_pattern_database;
 
 __device__ uint32_t device_edge_perm_neighbours[10044410][18];
 
@@ -324,6 +322,8 @@ __device__ uint16_t device_edge_or_dual[10044410][4];
 
 __device__ uint32_t device_full_corner_neighbours[1841970][18];
 __device__ uint32_t device_full_corner_dual[1841970];
+__device__ uint64_t *device_edge_perm_pattern_database;
+__device__ uint64_t *device_full_corner_pattern_database;
 
 __constant__ uint8_t device_rotated_moves[18][48];
 __constant__ uint8_t device_rotated_syms[48][48];
