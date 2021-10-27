@@ -797,8 +797,6 @@ void solve_cube(full_cube &f) {
 
 int main() {
     read_files();
-//    int maxbytes = 98304; // 96 KB
-//    cudaFuncSetAttribute(iterative_solve, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
     string shuffle;
     while (true) {
         getline(cin, shuffle);
