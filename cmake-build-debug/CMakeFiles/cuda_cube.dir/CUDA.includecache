@@ -6,12 +6,6 @@
 
 #IncludeRegexTransform: 
 
-E:/Documents/CLionProjects/cuda-cube/consts.cu
-vector
--
-consts.cuh
-E:/Documents/CLionProjects/cuda-cube/consts.cuh
-
 E:/Documents/CLionProjects/cuda-cube/consts.cuh
 vector
 -

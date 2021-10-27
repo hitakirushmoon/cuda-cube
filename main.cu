@@ -312,6 +312,7 @@ public:
     }
 };
 
+
 __device__ uint64_t *device_edge_perm_pattern_database;
 __device__ uint64_t *device_full_corner_pattern_database;
 
@@ -327,6 +328,7 @@ __device__ uint32_t device_full_corner_dual[1841970];
 __constant__ uint8_t device_rotated_moves[18][48];
 __constant__ uint8_t device_rotated_syms[48][48];
 __constant__ uint8_t device_dual_sym[48];
+__constant__ uint8_t device_dual_move[18];
 
 static auto host_edge_perm_pattern_database = new uint64_t[335544315];
 static auto host_full_corner_pattern_database = new uint64_t[235772160];
@@ -356,7 +358,6 @@ public:
             uint32_t temp_hash = clone.sym(perm_sym).edge_perm_hash();
             edge_perm = lower_bound(host_edge_perm_indexes, host_edge_perm_indexes + 5022205, temp_hash) - host_edge_perm_indexes;
             if (host_edge_perm_indexes[edge_perm] == temp_hash) break;
-
         }
         edge_perm = edge_perm * 2 + perm_sym / 48;
         perm_sym %= 48;
@@ -381,31 +382,29 @@ public:
         return os;
     }
 
-    __device__ index_cube device_move(uint8_t i, index_cube &next) const {
-        next.edge_or = device_edge_or_neighbours[edge_or][i];
+    __device__ void device_move(uint8_t i) {
+        edge_or = device_edge_or_neighbours[edge_or][i];
         int perm_move = device_rotated_moves[i][perm_sym];
-        next.edge_perm = device_edge_perm_neighbours[edge_perm][perm_move] / 48;
-        next.perm_sym = device_rotated_syms[perm_sym][device_edge_perm_neighbours[edge_perm][perm_move] % 48];
+        edge_perm = device_edge_perm_neighbours[edge_perm][perm_move];
+        perm_sym = device_rotated_syms[perm_sym][edge_perm % 48];
+        edge_perm /= 48;
         int corner_move = device_rotated_moves[i][corner_sym];
-        next.full_corner = device_full_corner_neighbours[full_corner][corner_move] / 48;
-        next.corner_sym = device_rotated_syms[corner_sym][device_full_corner_neighbours[full_corner][corner_move] % 48];
-        return next;
+        full_corner = device_full_corner_neighbours[full_corner][corner_move];
+        corner_sym = device_rotated_syms[corner_sym][full_corner % 48];
+        full_corner /= 48;
     }
 
-    __host__ index_cube host_move(uint8_t i, index_cube &next) const {
-        next.edge_or = host_edge_or_neighbours[edge_or][i];
+    __host__ void host_move(uint8_t i) {
+        edge_or = host_edge_or_neighbours[edge_or][i];
         int perm_move = host_rotated_moves[i][perm_sym];
-        next.edge_perm = host_edge_perm_neighbours[edge_perm][perm_move] / 48;
-        next.perm_sym = host_rotated_syms[perm_sym][host_edge_perm_neighbours[edge_perm][perm_move] % 48];
+        edge_perm = host_edge_perm_neighbours[edge_perm][perm_move];
+        perm_sym = host_rotated_syms[perm_sym][edge_perm % 48];
+        edge_perm /= 48;
         int corner_move = host_rotated_moves[i][corner_sym];
-        next.full_corner = host_full_corner_neighbours[full_corner][corner_move] / 48;
-        next.corner_sym = host_rotated_syms[corner_sym][host_full_corner_neighbours[full_corner][corner_move] % 48];
-        return next;
-    }
+        full_corner = host_full_corner_neighbours[full_corner][corner_move];
+        corner_sym = host_rotated_syms[corner_sym][full_corner % 48];
+        full_corner /= 48;
 
-    static index_cube get_cube_from_moves(const string &moves) {
-        index_cube i{};
-        return i.move(moves);
     }
 
     __host__ index_cube move(const string &moves) const {
@@ -413,9 +412,7 @@ public:
         string item;
         index_cube current = *this;
         while (getline(iss, item, ' ')) {
-            index_cube temp{};
-            current.host_move(get_move_int(item), temp);
-            current = temp;
+            current.host_move(get_move_int(item));
         }
         return current;
     }
@@ -440,8 +437,8 @@ public:
         int current_mod = read_from_edge_array(current);
         while (current.edge_perm + current.edge_or != 0) {
             for (int move = 0; move < 18; move++) {
-                index_cube next{};
-                current.host_move(move, next);
+                index_cube next = current;
+                next.host_move(move);
                 if ((read_from_edge_array(next) + 1) % 3 == current_mod) {
                     current_mod = (current_mod + 2) % 3;
                     current = next;
@@ -457,47 +454,39 @@ public:
         return a > b ? a : b;
     }
 
-    __host__ bool host_move(int move, search_state &next) const {
-        i.host_move(move, next.i);
-        if (next.i.edge_perm / 2 + next.i.full_corner + next.i.edge_or == 0)
+    __host__ bool host_move(int move) {
+        i.host_move(move);
+        if (i.edge_perm / 2 + i.full_corner + i.edge_or == 0)
             return true;
-        uint16_t corner_corrected_edge_or = host_edge_or_symmetries[next.i.edge_or][next.i.corner_sym];
-        uint16_t edge_perm_corrected_edge_or = host_edge_or_symmetries[next.i.edge_or][next.i.perm_sym];
-        uint16_t *dual = host_edge_or_dual[next.i.edge_perm];
+        uint16_t corner_corrected_edge_or = host_edge_or_symmetries[i.edge_or][i.corner_sym];
+        uint16_t edge_perm_corrected_edge_or = host_edge_or_symmetries[i.edge_or][i.perm_sym];
+        uint16_t *dual = host_edge_or_dual[i.edge_perm];
         uint16_t edge_perm_corrected_dual_edge_or = get_inverse_bits_from_lehmer_code(edge_perm_corrected_edge_or, dual[0], dual[1], dual[2],
                                                                                       dual[3]);
-        uint16_t dual_edge_or = host_edge_or_symmetries[edge_perm_corrected_dual_edge_or][host_dual_sym[next.i.perm_sym]];
-        dual_edge_or = host_edge_or_symmetries[dual_edge_or][next.i.corner_sym];
-        dual_edge_or = host_edge_or_symmetries[dual_edge_or][host_full_corner_dual[next.i.full_corner] % 48];
-        next.h_corner = max(host_read_from_corner_array(next.i.full_corner, corner_corrected_edge_or),
-                            host_read_from_corner_array(host_full_corner_dual[next.i.full_corner] / 48, dual_edge_or));
-        if (h_corner != 0 && h_corner - 1 > next.h_corner) next.h_corner = h_corner - 1;
-        uint16_t next_h_edge = host_read_from_edge_array(next.i.edge_perm,
-                                                         next.i.edge_perm % 2 == 0 ? edge_perm_corrected_edge_or : edge_perm_corrected_dual_edge_or);
-        next.h_edge = h_edge + (next_h_edge + h_edge * 2 + 1) % 3 - 1;
+        h_corner = max(max(h_corner, 1) - 1, max(host_read_from_corner_array(i.full_corner, corner_corrected_edge_or),
+                                                 host_read_from_corner_array(host_full_corner_dual[i.full_corner] / 48,
+                                                                             host_edge_or_symmetries[edge_perm_corrected_dual_edge_or][host_rotated_syms[host_rotated_syms[host_dual_sym[i.perm_sym]][i.corner_sym]][
+                                                                                     host_full_corner_dual[i.full_corner] % 48]])));
+        h_edge += (host_read_from_edge_array(i.edge_perm, i.edge_perm % 2 == 0 ? edge_perm_corrected_edge_or : edge_perm_corrected_dual_edge_or) +
+                   h_edge * 2 + 1) % 3 - 1;
         return false;
     }
 
 
-    __device__ bool device_move(int move, search_state &next) const {
-        i.device_move(move, next.i);
-        if (next.i.edge_perm / 2 + next.i.full_corner + next.i.edge_or == 0)
+    __device__ bool device_move(int move) {
+        i.device_move(move);
+        if (i.edge_perm / 2 + i.full_corner + i.edge_or == 0)
             return true;
-        uint16_t corner_corrected_edge_or = device_edge_or_symmetries[next.i.edge_or][next.i.corner_sym];
-        uint16_t edge_perm_corrected_edge_or = device_edge_or_symmetries[next.i.edge_or][next.i.perm_sym];
-        uint16_t *dual = device_edge_or_dual[next.i.edge_perm];
+        uint16_t edge_perm_corrected_edge_or = device_edge_or_symmetries[i.edge_or][i.perm_sym];
+        uint16_t *dual = device_edge_or_dual[i.edge_perm];
         uint16_t edge_perm_corrected_dual_edge_or = get_inverse_bits_from_lehmer_code(edge_perm_corrected_edge_or, dual[0], dual[1], dual[2],
                                                                                       dual[3]);
-        uint16_t dual_edge_or = device_edge_or_symmetries[edge_perm_corrected_dual_edge_or][device_dual_sym[next.i.perm_sym]];
-        dual_edge_or = device_edge_or_symmetries[dual_edge_or][next.i.corner_sym];
-        dual_edge_or = device_edge_or_symmetries[dual_edge_or][device_full_corner_dual[next.i.full_corner] % 48];
-        next.h_corner = max(device_read_from_corner_array(next.i.full_corner, corner_corrected_edge_or),
-                            device_read_from_corner_array(device_full_corner_dual[next.i.full_corner] / 48, dual_edge_or));
-        if (h_corner != 0 && h_corner - 1 > next.h_corner) next.h_corner = h_corner - 1;
-        uint16_t next_h_edge = device_read_from_edge_array(next.i.edge_perm,
-                                                           next.i.edge_perm % 2 == 0 ? edge_perm_corrected_edge_or
-                                                                                     : edge_perm_corrected_dual_edge_or);
-        next.h_edge = h_edge + (next_h_edge + h_edge * 2 + 1) % 3 - 1;
+        h_corner = max(max(h_corner, 1) - 1, max(device_read_from_corner_array(i.full_corner, device_edge_or_symmetries[i.edge_or][i.corner_sym]),
+                                                 device_read_from_corner_array(device_full_corner_dual[i.full_corner] / 48,
+                                                                               device_edge_or_symmetries[edge_perm_corrected_dual_edge_or][device_rotated_syms[device_rotated_syms[device_dual_sym[i.perm_sym]][i.corner_sym]][
+                                                                                       device_full_corner_dual[i.full_corner] % 48]])));
+        h_edge += (device_read_from_edge_array(i.edge_perm, i.edge_perm % 2 == 0 ? edge_perm_corrected_edge_or : edge_perm_corrected_dual_edge_or) +
+                   h_edge * 2 + 1) % 3 - 1;
         return false;
     }
 
@@ -558,22 +547,13 @@ class ida_stack {
 public:
     int8_t head;
     int8_t moves[20];
-    search_state state_stack[20 + 1];
+    search_state state;
 
-    __host__ __device__ ida_stack() : state_stack{}, head{0}, moves{} {
+    __host__ __device__ ida_stack() : state{}, head{0}, moves{} {
         for (int8_t &move: moves) {
             move = -1;
         }
     }
-
-    __host__ __device__ search_state &current_state() {
-        return state_stack[head];
-    }
-
-    __host__ __device__ search_state &next_state() {
-        return state_stack[head + 1];
-    };
-
     __host__ __device__ int8_t &current_move() {
         return moves[head];
     }
@@ -612,16 +592,17 @@ void read_files() {
     cudaMemcpyToSymbol(device_rotated_moves, host_rotated_moves, 18 * 48 * sizeof(uint8_t));
     cudaMemcpyToSymbol(device_rotated_syms, host_rotated_syms, 48 * 48 * sizeof(uint8_t));
     cudaMemcpyToSymbol(device_dual_sym, host_dual_sym, 48 * sizeof(uint8_t));
+    cudaMemcpyToSymbol(device_dual_move, host_dual_move, 18 * sizeof(uint8_t));
 
     uint64_t *device_edge_perm_pattern_database_address;
     read_file("../edge_perm_edge_or_pattern_database", host_edge_perm_pattern_database);
-    gpuErrchk(cudaMalloc((void **) &device_edge_perm_pattern_database_address, 335544315 * sizeof(uint64_t)));
+    gpuErrchk(cudaMalloc((void **) &device_edge_perm_pattern_database_address, 335544315 * sizeof(uint64_t)))
     cudaMemcpy(device_edge_perm_pattern_database_address, host_edge_perm_pattern_database, 335544315 * sizeof(uint64_t), cudaMemcpyHostToDevice);
     cudaMemcpyToSymbol(device_edge_perm_pattern_database, &device_edge_perm_pattern_database_address, sizeof(uint64_t *));
 
     uint64_t *device_full_corner_pattern_database_address;
     read_file("../corner_edge_or_pattern_database", host_full_corner_pattern_database);
-    gpuErrchk(cudaMalloc((void **) &device_full_corner_pattern_database_address, 235772160 * sizeof(uint64_t)));
+    gpuErrchk(cudaMalloc((void **) &device_full_corner_pattern_database_address, 235772160 * sizeof(uint64_t)))
     cudaMemcpy(device_full_corner_pattern_database_address, host_full_corner_pattern_database, 235772160 * sizeof(uint64_t), cudaMemcpyHostToDevice);
     cudaMemcpyToSymbol(device_full_corner_pattern_database, &device_full_corner_pattern_database_address, sizeof(uint64_t *));
 
@@ -647,25 +628,30 @@ void read_files() {
     read_file("../corner_dual", host_full_corner_dual);
     cudaMemcpyToSymbol(device_full_corner_dual, host_full_corner_dual, 1841970 * sizeof(uint32_t));
     cout << "import finished" << endl;
-    gpuErrchk(cudaMalloc((void **) &device_result, sizeof(uint32_t)));
+    gpuErrchk(cudaMalloc((void **) &device_result, sizeof(uint32_t)))
 
 }
 
-__host__ static int generate_stack(const search_state init, const uint8_t bound, bool add_to_vector, int target_count = -1) {
+__host__ static int generate_stack(const search_state &init, const uint8_t bound, bool add_to_vector, int target_count = -1) {
     ida_stack ss{};
-    ss.current_state() = init;
+    ss.state = init;
 //    host_stacks.clear();
     int count = 0;
-    while (ss.head >= 0) {
+    while (true) {
         if (++ss.current_move() == 18) {
             ss.current_move() = -1;
             ss.head--;
+            if (ss.head < 0) {
+                return count;
+            }
+            ss.state.host_move(host_dual_move[ss.current_move()]);
             continue;
         }
         if (ss.check_unnecessary_move()) continue;
-        search_state &current = ss.current_state();
-        search_state &next_state = ss.next_state();
-        if (current.host_move(ss.current_move(), next_state)) {
+
+        search_state current = ss.state;
+
+        if (current.host_move(ss.current_move())) {
             cout << count << endl;
             for (const auto &item: ss.moves) {
                 if (item == -1) break;
@@ -674,10 +660,7 @@ __host__ static int generate_stack(const search_state init, const uint8_t bound,
             cout << endl;
             return -1;
         }
-        if (next_state.h_corner - 1 > current.h_corner) {
-            current.h_corner = next_state.h_corner - 1;
-        }
-        if (++ss.head + next_state.h() > bound) {
+        if (++ss.head + current.h() > bound) {
             if (count++ == target_count) {
                 result = ss;
                 return -1;
@@ -685,45 +668,42 @@ __host__ static int generate_stack(const search_state init, const uint8_t bound,
             if (add_to_vector) {
                 mem_transfer mem{};
                 mem.head = ss.head;
-                mem.h = ss.current_state().h_corner * 16 + ss.current_state().h_edge;
+                mem.h = current.h_corner * 16 + current.h_edge;
                 mem.prev_move_2 = ss.moves[ss.head - 2];
                 mem.prev_move = ss.moves[ss.head - 1];
-                mem.i = ss.current_state().i;
+                mem.i = current.i;
                 host_stacks.push_back(mem);
             }
             ss.head--;
             continue;
         }
+        ss.state = current;
     }
-    return count;
 }
 
 __global__ void iterative_solve(const int limit, const int bound) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     extern __shared__ ida_stack shared_stacks[];
-    ida_stack &ss = shared_stacks[threadIdx.x];
     if (tid < limit) {
+        ida_stack &ss = shared_stacks[threadIdx.x];
         ss = ida_stack();
         ss.head = device_stacks[tid].head;
         ss.moves[ss.head - 1] = device_stacks[tid].prev_move;
         ss.moves[ss.head - 2] = device_stacks[tid].prev_move_2;
-        ss.current_state().h_corner = device_stacks[tid].h / 16;
-        ss.current_state().h_edge = device_stacks[tid].h % 16;
-        ss.current_state().i = device_stacks[tid].i;
+        ss.state.h_corner = device_stacks[tid].h / 16;
+        ss.state.h_edge = device_stacks[tid].h % 16;
+        ss.state.i = device_stacks[tid].i;
         const int original_layer = ss.head;
-        while (ss.head >= original_layer) {
-            if (device_result != -1) {
-                return;
-            }
+        while (ss.head >= original_layer && device_result == -1) {
             if (++ss.current_move() == 18) {
                 ss.current_move() = -1;
                 ss.head--;
+                ss.state.device_move(device_dual_move[ss.current_move()]);
                 continue;
             }
             if (ss.check_unnecessary_move()) continue;
-            search_state &current = ss.current_state();
-            search_state &next_state = ss.next_state();
-            if (current.device_move(ss.current_move(), next_state)) {
+            search_state current = ss.state;
+            if (current.device_move(ss.current_move())) {
                 if (device_result != -1) {
                     return;
                 }
@@ -733,13 +713,11 @@ __global__ void iterative_solve(const int limit, const int bound) {
                 }
                 return;
             }
-            if (next_state.h_corner - 1 > current.h_corner) {
-                current.h_corner = next_state.h_corner - 1;
-            }
-            if (++ss.head + next_state.h() > bound) {
+            if (++ss.head + current.h() > bound) {
                 ss.head--;
                 continue;
             }
+            ss.state = current;
         }
     }
 }
@@ -750,7 +728,7 @@ struct unaryfn : std::unary_function<int, int> {
 
 void solve_cube(full_cube &f) {
     search_state state(f);
-    if (state.i.edge_perm / 2 + state.i.full_corner + state.i.edge_or == 0){
+    if (state.i.edge_perm / 2 + state.i.full_corner + state.i.edge_or == 0) {
         return;
     }
     cout << state << endl;
@@ -784,17 +762,17 @@ void solve_cube(full_cube &f) {
     cout << "starting nodes: " << size << endl;
     gpuErrchk(cudaMemcpyToSymbol(device_stacks, &host_stacks[0], size * sizeof(mem_transfer)))
     gpuErrchk(cudaMemcpyToSymbol(device_result, &host_result, sizeof(int)))
-    gpuErrchk(cudaDeviceSynchronize());
+    gpuErrchk(cudaDeviceSynchronize())
     while (true) {
         std::cout << bound << std::endl;
         auto t1 = chrono::high_resolution_clock::now();
         iterative_solve<<<gridSize, blockSize, blockSize * sizeof(ida_stack)>>>(size, bound);
-        gpuErrchk(cudaGetLastError());
-        gpuErrchk(cudaDeviceSynchronize());
+        gpuErrchk(cudaGetLastError())
+        gpuErrchk(cudaDeviceSynchronize())
         cudaMemcpyFromSymbol(&host_result, device_result, sizeof(int));
         cudaMemcpyFromSymbol(&host_moves, moves, 20 * sizeof(int8_t));
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
+        gpuErrchk(cudaPeekAtLastError())
+        gpuErrchk(cudaDeviceSynchronize())
         auto t2 = chrono::high_resolution_clock::now();
         if (host_result != -1) {
             generate_stack(state, true_bound, false, host_result);
@@ -818,28 +796,9 @@ void solve_cube(full_cube &f) {
 
 
 int main() {
-//    int nDevices;
-//
-//    cudaGetDeviceCount(&nDevices);
-//    for (int i = 0; i < nDevices; i++) {
-//        cudaDeviceProp prop;
-//        cudaGetDeviceProperties(&prop, i);
-//        printf("%d.%d\n", prop.major, prop.minor);
-//        printf("%d %d %d \n", prop.maxThreadsPerMultiProcessor, prop.maxThreadsPerBlock, prop.maxBlocksPerMultiProcessor);
-//        printf("Device Number: %d\n", i);
-//        printf("  Device name: %s\n", prop.name);
-//        printf("  Memory Clock Rate (KHz): %d\n",
-//               prop.memoryClockRate);
-//        printf("  Memory Bus Width (bits): %d\n",
-//               prop.memoryBusWidth);
-//        printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
-//               2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
-//    }
-
     read_files();
-
-    int maxbytes = 98304; // 96 KB
-    cudaFuncSetAttribute(iterative_solve, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+//    int maxbytes = 98304; // 96 KB
+//    cudaFuncSetAttribute(iterative_solve, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
     string shuffle;
     while (true) {
         getline(cin, shuffle);
